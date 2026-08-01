@@ -1,10 +1,10 @@
 # BC-250 (cyan skillfish) SMU metrics layout with 8 cores unlocked
 
 This documents the actual byte layout the SMU firmware (PMFW) writes into the metrics
-table of a BC-250 / Steam-Deck-derivate APU ("cyan skillfish") when all eight physical
-cores are enabled, and how it differs from both the stock six-core struct and the
-community "eight-core" patches. It is the result of a differential probe (offlining
-cores one group at a time and reading the raw buffer). Raw data is included inline.
+table of a BC-250 ("cyan skillfish") when all eight physical cores are enabled, and 
+how it differs from both the stock six-core struct and the community "eight-core" patches. 
+It is the result of a differential probe (offlining cores one group at a time and reading 
+the raw buffer). Raw data is included inline.
 
 ## Driver patch (experimental)
 
