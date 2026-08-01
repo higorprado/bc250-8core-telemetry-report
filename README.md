@@ -21,7 +21,7 @@ rollback handy.
 
 ## Hardware and context
 
-- APU: AMD "cyan skillfish" (Van Gogh / Aerith family), originally 6 physical cores.
+- APU: AMD "cyan skillfish", originally 6 physical cores.
 - 8 cores unlocked via a BIOS/core-presence patch (persistent across cold boot).
   After unlock: core_ids 0-7, `nproc=16` (SMT).
 - Driver: `amdgpu` swsmu, `cyan_skillfish_ppt.c`. Kernel 7.1.3 (CachyOS).
