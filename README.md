@@ -6,6 +6,19 @@ cores are enabled, and how it differs from both the stock six-core struct and th
 community "eight-core" patches. It is the result of a differential probe (offlining
 cores one group at a time and reading the raw buffer). Raw data is included inline.
 
+## Driver patch (experimental)
+
+A driver patch that turns the layout below into working per-core telemetry is in
+[`patches/0001-bc250-8core-telemetry.patch`](patches/0001-bc250-8core-telemetry.patch),
+with build/install instructions in [`APPLY-PATCH.md`](APPLY-PATCH.md).
+
+> **EXPERIMENTAL — USE AT YOUR OWN RISK.** The mapping is empirical and specific
+to one PMFW revision; it has no runtime sanity check and is not endorsed by AMD.
+It only modifies the telemetry **read-out** path (no power/clock/voltage control is
+changed), so the worst realistic outcome is wrong telemetry numbers — but you apply
+it at your own responsibility. Read `APPLY-PATCH.md` fully and keep the stock
+rollback handy.
+
 ## Hardware and context
 
 - APU: AMD "cyan skillfish" (Van Gogh / Aerith family), originally 6 physical cores.
