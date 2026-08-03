@@ -105,6 +105,15 @@ for p in "${PATCHES[@]}"; do
   sed -i "s/^b2sums=(/b2sums=('${pb2}'\\n /" PKGBUILD
 done
 
+# ---- guard against interactive kconfig prompts --------------------------------
+# CachyOS's config occasionally contains invalid values (e.g. CONFIG_X=m for a
+# bool symbol) that make 'make prepare' halt with a "Restart config" interactive
+# prompt, blocking automated builds.  Insert a non-interactive 'olddefconfig'
+# run before the existing 'make prepare' so every new/invalid symbol resolves to
+# its default.  Harmless when the config is already clean.
+log "Guarding against interactive kconfig prompts"
+sed -i '/### Rewrite configuration/a\    yes "" | make "${BUILD_FLAGS[@]}" olddefconfig >/dev/null 2>&1 || true' PKGBUILD
+
 log "Resulting package configuration"
 grep -E '^(_pkgsuffix=|pkgbase=|_major=|_minor=|_rcver=|_srctag=|pkgver=|pkgrel=)' PKGBUILD | tail -n 10
 
