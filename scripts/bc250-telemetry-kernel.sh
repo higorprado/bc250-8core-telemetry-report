@@ -142,60 +142,24 @@ if [[ $DRY_RUN -eq 1 ]]; then
 fi
 
 # ---- build + install --------------------------------------------------------
+# Prime sudo up front so the password is entered NOW (while the user is
+# attentive), not after a ~30 min build. A background loop keeps the sudo
+# timestamp alive across the build so makepkg's internal sudo calls
+# (--syncdeps, --install) need no further prompt. Same pattern yay/paru use.
+log "Authenticating now (sudo password needed for install later)"
+sudo -v || die "This script needs sudo to install the built kernel."
+( while true; do sudo -n true 2>/dev/null || break; sleep 60; done ) &
+_BC250_SUDO_KEEP=$!
+trap 'kill "$_BC250_SUDO_KEEP" 2>/dev/null || true' EXIT
+
 log "Building and installing $CUSTOM_PKGBASE (this takes ~20-30 min)"
 makepkg --syncdeps --install --cleanbuild
 
-# ---- enable cs_eight_core_map=1 (per-core telemetry needs it) ---------------
-# Per-core telemetry is gated by this module parameter (default off).
-# Best-effort: auto-add for Limine; clear instructions otherwise.
-ensure_eight_core_map() {
-  local param='amdgpu.cs_eight_core_map=1'
-  local limine=/boot/limine.conf grub=/etc/default/grub
-
-  if [[ -f "$limine" ]]; then
-    if sudo grep -q 'cs_eight_core_map' "$limine" 2>/dev/null; then
-      log "cs_eight_core_map already present in $limine"
-      return
-    fi
-    log "Adding $param to Limine kernel command lines (needs sudo)"
-    # Append the param to every linux-protocol kernel path line that lacks it.
-    # CachyOS Limine entries carry the cmdline on the 'path:' line of the kernel.
-    if sudo sed -i "s#\(path:.*vmlinuz[^ ]*\)#\1 $param#g" "$limine" 2>/dev/null \
-       && sudo grep -q 'cs_eight_core_map' "$limine" 2>/dev/null; then
-      log "Added. Re-running limine entry tool to refresh hashes."
-      command -v limine-mkinitcpio >/dev/null 2>&1 && sudo limine-mkinitcpio || true
-      command -v rebuild-pstate.py >/dev/null 2>&1 && sudo rebuild-pstate.py || true
-      return
-    fi
-    log "WARNING: could not auto-edit $limine safely."
-  elif [[ -f "$grub" ]]; then
-    if sudo grep -q 'cs_eight_core_map' "$grub" 2>/dev/null; then
-      log "cs_eight_core_map already present in $grub"
-      return
-    fi
-    log "Adding $param to GRUB_CMDLINE_LINUX_DEFAULT (needs sudo)"
-    sudo sed -i "s#\(^GRUB_CMDLINE_LINUX_DEFAULT=.*\)\"#\1 $param\"#" "$grub" 2>/dev/null \
-      && sudo grub-mkconfig -o /boot/grub/grub.cfg 2>/dev/null && return
-    log "WARNING: could not auto-edit $grub safely."
-  else
-    log "No Limine or GRUB config detected."
-  fi
-
-  cat >&2 <<EOF
-
-  ── MANUAL STEP REQUIRED ──────────────────────────────────────────
-  Per-core telemetry needs  $param  on the kernel command line.
-  Add it to your bootloader config and rebuild the bootloader, e.g.:
-
-    Limine : append "$param" to the kernel path line in /boot/limine.conf,
-             then: sudo limine-mkinitcpio && sudo rebuild-pstate.py
-    GRUB   : add "$param" to GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub,
-             then: sudo grub-mkconfig -o /boot/grub/grub.cfg
-  ──────────────────────────────────────────────────────────────────
-EOF
-}
-ensure_eight_core_map
-
+# Per-core telemetry is auto-detected at boot (the patched driver counts
+# physical cores and selects the 8-core hybrid layout when 8 are present), so
+# no kernel command-line parameter is required. The optional cs_eight_core_map=1
+# remains available to force the 8-core layout for debugging.
 log "Done. Installed $CUSTOM_PKGBASE."
-log "Reboot and select 'linux-cachyos-bc250' in your bootloader,"
-log "then check: cat /sys/module/amdgpu/parameters/cs_eight_core_map  (expect: Y)"
+log "Reboot and select 'linux-cachyos-bc250' in your bootloader."
+log "Per-core telemetry is auto-detected at boot; verify with:"
+log "  amdgpu_top   (look for current_coreclk across 8 cores)"

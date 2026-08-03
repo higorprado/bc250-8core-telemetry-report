@@ -13,8 +13,8 @@
 
 Run the build script. It downloads the official CachyOS PKGBUILD, injects the
 patch, builds and installs a **separate** kernel package (`linux-cachyos-bc250`)
-that coexists with the stock kernel, and configures the `cs_eight_core_map`
-parameter. Roll back any time by booting the stock kernel.
+that coexists with the stock kernel. Per-core telemetry is auto-detected at
+boot. Roll back any time by booting the stock kernel.
 
 ```bash
 git clone https://github.com/higorprado/bc250-8core-telemetry-report
@@ -39,8 +39,9 @@ per-core region and the Gfxclk field. This patch:
 
 - Adds `SmuMetricsTable_hybrid_t` (with a `static_assert(sizeof == 116)`).
 - Reads Gfxclk via the `GetGfxclkFrequency` SMU message (offset 0x44 is C0[6]).
-- Populates the per-core `gpu_metrics` arrays from the hybrid layout, gated by a
-  module parameter. Cores with no firmware slot stay at `0xFFFF` sentinel.
+- Auto-detects the physical core count and populates the per-core `gpu_metrics`
+  arrays from the hybrid layout when 8 cores are present. Cores with no firmware
+  slot stay at `0xFFFF` sentinel.
 - Leaves all aggregate telemetry (GPU/SOC temperature, rail power, clocks) intact.
 
 ## Prerequisites
@@ -95,22 +96,25 @@ sudo reboot
 Verify the same module hash is in the initramfs as on disk, then after reboot:
 ```bash
 cat /sys/module/amdgpu/srcversion
-cat /sys/module/amdgpu/parameters/cs_eight_core_map
+# Per-core telemetry is auto-detected (param reads N by default on an 8-core
+# machine); verify the hybrid layout is active with: amdgpu_top
 ```
 
-## 5. Module parameter (only one)
+## 5. Module parameter (optional)
+
+The driver **auto-detects** the physical core count at boot and selects the
+8-core hybrid layout when 8 cores are present — no parameter is needed.
 
 | Parameter | Default | Effect |
 |---|---|---|
-| `cs_eight_core_map` | off | Interpret the Current table as the 8-core hybrid layout and expose per-core telemetry. **Enable for per-core data.** |
+| `cs_eight_core_map` | off | Force the 8-core hybrid layout even when auto-detection would not pick it (off = auto-detect, on = force 8-core). |
 
-Make it persistent via the Limine kernel command line (default boot entry):
+Optional, for debugging/edge cases — add to the kernel command line:
 ```
 amdgpu.cs_eight_core_map=1
 ```
-With it off (default): aggregates only; per-core fields stay at the `0xFFFF` sentinel.
 
-## 6. Expected behaviour (`cs_eight_core_map=1`)
+## 6. Expected behaviour (8-core, auto-detected)
 
 - `current_coreclk`: all 8 cores (~4050 MHz under load).
 - `average_core_power`: cores 1–7 (~7 W/core under load); core 0 = sentinel (its
@@ -134,8 +138,9 @@ sudo depmod 7.1.3-2-cachyos && sudo limine-mkinitcpio && sudo rebuild-pstate.py
 ## Caveats
 
 - The hybrid layout was mapped empirically on one machine/firmware revision. Other
-  PMFW versions may shift offsets; `cs_eight_core_map` is opt-in (default off) to
-  mitigate this. There is no runtime sanity check yet.
+  PMFW versions may shift offsets; auto-detection is keyed on physical core count
+  (a 6-core BC-250 gets the stock layout, an 8-core one gets the hybrid layout).
+  There is no runtime sanity check on the byte offsets yet.
 - Read-path only: no power/clock/voltage control is altered; only the
   `GetGfxclkFrequency` query is added.
 - See `README.md` for the full layout mapping and differential-proof data.

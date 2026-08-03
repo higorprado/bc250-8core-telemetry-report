@@ -1,25 +1,35 @@
 --- a/drivers/gpu/drm/amd/pm/swsmu/smu11/cyan_skillfish_ppt.c
 +++ b/drivers/gpu/drm/amd/pm/swsmu/smu11/cyan_skillfish_ppt.c
-@@ -60,6 +60,18 @@
+@@ -32,6 +32,8 @@
+ #include "smu_v11_8_pmfw.h"
+ #include "smu_cmn.h"
+ #include "soc15_common.h"
++#include <linux/topology.h>
++#include <linux/cpumask.h>
+ 
+ /*
+  * DO NOT use these for err/warn/info/debug messages.
+@@ -60,6 +62,19 @@
  
  static uint32_t cyan_skillfish_sclk_default;
  
 +/*
-+ * cs_eight_core_map (default off): interpret the Current SMU metrics table
-+ * using the empirically-mapped 8-core hybrid layout and expose per-core
-+ * telemetry (frequency for 8 cores, power for cores 1-7, temperature for
-+ * cores 4-5). Cores without a firmware slot stay at the 0xffff sentinel set
-+ * by smu_cmn_init_soft_gpu_metrics. Aggregate fields are unaffected.
++ * cs_eight_core_map (default off): force the 8-core hybrid layout. By default
++ * the driver auto-detects the physical core count (cyan_skillfish_core_count)
++ * and picks the hybrid layout when 8 cores are present, so this parameter is
++ * only needed to force it on for debugging. Cores without a firmware slot stay
++ * at the 0xffff sentinel set by smu_cmn_init_soft_gpu_metrics. Aggregate fields
++ * are unaffected.
 + */
 +static bool cs_eight_core_map;
 +module_param(cs_eight_core_map, bool, 0644);
 +MODULE_PARM_DESC(cs_eight_core_map,
-+		 "Map 8-core hybrid SMU layout to per-core gpu_metrics (default off)");
++		 "Force 8-core hybrid SMU layout (auto-detected by default; set to 1 to force on)");
 +
  static const struct smu_feature_bits cyan_skillfish_dpm_features = {
  	.bits = {
  		SMU_FEATURE_BIT_INIT(FEATURE_FCLK_DPM_BIT),
-@@ -77,6 +89,7 @@
+@@ -77,6 +92,7 @@
  	MSG_MAP(TransferTableSmu2Dram,          PPSMC_MSG_TransferTableSmu2Dram,	0),
  	MSG_MAP(TransferTableDram2Smu,          PPSMC_MSG_TransferTableDram2Smu,	0),
  	MSG_MAP(GetEnabledSmuFeatures,          PPSMC_MSG_GetEnabledSmuFeatures,	0),
@@ -27,7 +37,7 @@
  	MSG_MAP(RequestGfxclk,                  PPSMC_MSG_RequestGfxclk,		0),
  	MSG_MAP(ForceGfxVid,                    PPSMC_MSG_ForceGfxVid,			0),
  	MSG_MAP(UnforceGfxVid,                  PPSMC_MSG_UnforceGfxVid,		0),
-@@ -143,7 +156,11 @@
+@@ -143,7 +159,11 @@
  
  	switch (member) {
  	case METRICS_CURR_GFXCLK:
@@ -40,7 +50,31 @@
  		break;
  	case METRICS_CURR_SOCCLK:
  		*value = metrics->Current.SocclkFrequency;
-@@ -391,12 +408,19 @@
+@@ -384,6 +404,23 @@
+ 					  cyan_skillfish_dpm_features.bits);
+ }
+ 
++/*
++ * Count physical CPU cores present (one per SMT sibling group). Used to
++ * auto-select the SMU metrics layout: 8 cores -> 8-core hybrid table,
++ * otherwise the stock six-wide table. Contributed by FilippoR
++ * (https://github.com/filippor).
++ */
++static uint16_t cyan_skillfish_core_count(void)
++{
++	unsigned int cpu;
++	uint16_t cores = 0;
++
++	for_each_present_cpu(cpu)
++		if (cpumask_first(topology_sibling_cpumask(cpu)) == cpu)
++			cores++;
++	return cores;
++}
++
+ static ssize_t cyan_skillfish_get_gpu_metrics(struct smu_context *smu,
+ 						void **table)
+ {
+@@ -391,12 +428,19 @@
  		(struct gpu_metrics_v2_2 *)smu_driver_table_ptr(
  			smu, SMU_DRIVER_TABLE_GPU_METRICS);
  	SmuMetrics_t metrics;
@@ -60,7 +94,7 @@
  	smu_cmn_init_soft_gpu_metrics(gpu_metrics, 2, 2);
  
  	gpu_metrics->temperature_gfx = metrics.Current.GfxTemperature;
-@@ -413,17 +437,27 @@
+@@ -413,17 +457,33 @@
  	gpu_metrics->average_vclk_frequency = metrics.Average.VclkFrequency;
  	gpu_metrics->average_dclk_frequency = metrics.Average.DclkFrequency;
  
@@ -76,7 +110,7 @@
 -		gpu_metrics->temperature_core[i] = metrics.Current.CoreTemperature[i];
 -		gpu_metrics->average_core_power[i] = metrics.Average.CorePower[i];
 -		gpu_metrics->current_coreclk[i] = metrics.Current.CoreFrequency[i];
-+	if (cs_eight_core_map) {
++	if (cs_eight_core_map || cyan_skillfish_core_count() >= 8) {
 +		/* Interpret the Current table as the 8-core hybrid layout. The
 +		 * Average table stays six-wide, so per-core power is sourced from
 +		 * Current (instantaneous, not averaged). Cores with no firmware
@@ -90,6 +124,12 @@
 +			gpu_metrics->average_core_power[i] = hcur.CorePower[i - 1];
 +		gpu_metrics->temperature_core[4] = hcur.CoreTemperature[0];
 +		gpu_metrics->temperature_core[5] = hcur.CoreTemperature[1];
++	} else {
++		for (i = 0; i < 6; i++) {
++			gpu_metrics->temperature_core[i] = metrics.Current.CoreTemperature[i];
++			gpu_metrics->average_core_power[i] = metrics.Average.CorePower[i];
++			gpu_metrics->current_coreclk[i] = metrics.Current.CoreFrequency[i];
++		}
  	}
  
  	for (i = 0; i < 2; i++) {
