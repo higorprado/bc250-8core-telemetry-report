@@ -150,19 +150,27 @@ if [[ $DRY_RUN -eq 1 ]]; then
   exit 0
 fi
 
-# ---- build + install --------------------------------------------------------
-# Prime sudo up front so the password is entered NOW (while the user is
-# attentive), not after a ~30 min build. A background loop keeps the sudo
-# timestamp alive across the build so makepkg's internal sudo calls
-# (--syncdeps, --install) need no further prompt. Same pattern yay/paru use.
-log "Authenticating now (sudo password needed for install later)"
-sudo -v || die "This script needs sudo to install the built kernel."
-( while true; do sudo -n true 2>/dev/null || break; sleep 60; done ) &
-_BC250_SUDO_KEEP=$!
-trap 'kill "$_BC250_SUDO_KEEP" 2>/dev/null || true' EXIT
+# ---- build ------------------------------------------------------------------
+# Build only — do NOT install yet.  Separating build from install means the
+# compiled .pkg.tar.* survives even if the install step fails or the user
+# walks away.  No background keepalive: sudo is invoked twice, both explicit
+# (once for build deps, once for the actual install).
+log "Authenticating (sudo needed for build dependencies)"
+sudo -v || die "This script needs sudo to install build dependencies."
 
-log "Building and installing $CUSTOM_PKGBASE (this takes ~20-30 min)"
-makepkg --syncdeps --install --cleanbuild
+log "Building $CUSTOM_PKGBASE (this takes ~30-50 min)"
+makepkg --syncdeps --cleanbuild
+
+# ---- install ----------------------------------------------------------------
+# Install explicitly so the password prompt appears HERE, after the build —
+# not buried inside makepkg where a timeout silently discards everything.
+# If it fails, the packages are safe and the manual command is printed.
+log "Installing built packages"
+if ! sudo pacman -U "$BUILD_ROOT"/*.pkg.tar.*; then
+  log "Install failed or cancelled. Packages are safe at: $BUILD_ROOT/"
+  log "Install manually with: sudo pacman -U $BUILD_ROOT/*.pkg.tar.*"
+  exit 1
+fi
 
 # Per-core telemetry is auto-detected at boot (the patched driver counts
 # physical cores and selects the 8-core hybrid layout when 8 are present), so
