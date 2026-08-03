@@ -108,6 +108,17 @@ done
 log "Resulting package configuration"
 grep -E '^(_pkgsuffix=|pkgbase=|_major=|_minor=|_rcver=|_srctag=|pkgver=|pkgrel=)' PKGBUILD | tail -n 10
 
+# ---- import the kernel's PGP signing key (makepkg verifies source .asc) --------
+# CachyOS signs the kernel tarball; without the key makepkg aborts at verify().
+log "Ensuring kernel signing key is present in keyring"
+mapfile -t _pgpkeys < <(awk '/^validpgpkeys=\(/,/^\)/' PKGBUILD | grep -oE '[0-9A-F]{40}' | sort -u)
+for _k in "${_pgpkeys[@]}"; do
+  if gpg --list-keys "$_k" >/dev/null 2>&1; then continue; fi
+  gpg --recv-keys "$_k" 2>/dev/null \
+    || gpg --keyserver keyserver.ubuntu.com --recv-keys "$_k" 2>/dev/null \
+    || log "WARNING: could not import PGP key $_k"
+done
+
 # ---- dry-run: verify the patch applies cleanly to the downloaded source ------
 if [[ $DRY_RUN -eq 1 ]]; then
   log "--dry-run: verifying the patch applies to the source"
