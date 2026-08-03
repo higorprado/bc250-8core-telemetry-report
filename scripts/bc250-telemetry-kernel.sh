@@ -28,6 +28,9 @@ usage() {
   exit 0
 }
 
+log() { printf '\n==> %s\n' "$*"; }
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --rc)      VARIANT="linux-cachyos-rc"; shift;;
@@ -35,7 +38,10 @@ while [ $# -gt 0 ]; do
     --dry-run) DRY_RUN=1; shift;;
     -h|--help) usage;;
     --*) echo "Unknown option: $1" >&2; exit 2;;
-    *)  EXTRA_PATCH="$1"; shift;;
+    *)  if [[ -n "$EXTRA_PATCH" ]]; then
+          die "Only one extra patch is supported. Got: $1 and $EXTRA_PATCH"
+        fi
+        EXTRA_PATCH="$1"; shift;;
   esac
 done
 
@@ -49,19 +55,23 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 TELEMETRY_PATCH="${SCRIPT_DIR}/../patches/0001-bc250-8core-telemetry.patch"
 PATCH_RAW_URL="https://raw.githubusercontent.com/higorprado/bc250-8core-telemetry-report/main/patches/0001-bc250-8core-telemetry.patch"
 
-log() { printf '\n==> %s\n' "$*"; }
-die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-
 # ---- preflight --------------------------------------------------------------
 [[ $EUID -ne 0 ]] || die "Run as a normal user, not root (makepkg refuses root)."
 for c in makepkg curl b2sum sed grep nproc realpath; do
   command -v "$c" >/dev/null 2>&1 || die "Required command not found: $c"
 done
 
+# ---- setup build dir (before patch fetch so cleanup doesn't delete it) --------
+log "Clean build directory: $BUILD_ROOT"
+rm -rf -- "$BUILD_ROOT"
+mkdir -p -- "$BUILD_ROOT"
+
+# ---- locate telemetry patch -------------------------------------------------
+# Bundled next to this script, else fetch to cache (OUTSIDE build dir so the
+# cleanup above can't delete it).
 if [[ ! -f "$TELEMETRY_PATCH" ]]; then
   log "Telemetry patch not bundled; fetching from GitHub"
-  mkdir -p "$BUILD_ROOT"
-  TELEMETRY_PATCH="${BUILD_ROOT}/0001-bc250-8core-telemetry.patch"
+  TELEMETRY_PATCH="${XDG_CACHE_HOME:-$HOME/.cache}/0001-bc250-8core-telemetry.patch"
   curl -fL "$PATCH_RAW_URL" -o "$TELEMETRY_PATCH" || die "Could not fetch telemetry patch."
 fi
 [[ -f "$TELEMETRY_PATCH" ]] || die "Telemetry patch missing: $TELEMETRY_PATCH"
@@ -72,10 +82,6 @@ if [[ -n "$EXTRA_PATCH" ]]; then
   PATCHES+=("$(realpath "$EXTRA_PATCH")")
 fi
 
-# ---- setup build dir --------------------------------------------------------
-log "Clean build directory: $BUILD_ROOT"
-rm -rf -- "$BUILD_ROOT"
-mkdir -p -- "$BUILD_ROOT"
 cd -- "$BUILD_ROOT"
 
 log "Downloading ${VARIANT} PKGBUILD + config"
@@ -95,7 +101,10 @@ sed -i \
   PKGBUILD
 
 # ---- inject patches into source=() and b2sums=() ---------------------------
-for p in "${PATCHES[@]}"; do
+# Iterate in reverse so prepend (insert after opening paren) yields correct
+# order: telemetry first, then extra, then existing entries.
+for (( _i=${#PATCHES[@]}-1; _i>=0; _i-- )); do
+  p="${PATCHES[$_i]}"
   pname="$(basename "$p")"
   [[ "$pname" =~ ^[A-Za-z0-9._+-]+$ ]] || die "Patch filename unsafe: $pname"
   cp -- "$p" "./$pname"
@@ -139,9 +148,14 @@ if [[ $DRY_RUN -eq 1 ]]; then
     log "Downloading $srcball"
     curl -fL --retry 2 -o "$srcball" "$srcurl"
     tar -xzf "$srcball"
-    ( cd "${srcball%.tar.gz}" && patch -p1 --dry-run < "../$pname" ) \
-      && log "PATCH APPLIES CLEANLY to ${srcball%.tar.gz} ✓" \
-      || die "Patch does NOT apply cleanly — rework needed."
+    for _p in "${PATCHES[@]}"; do
+      _pname="$(basename "$_p")"
+      if ( cd "${srcball%.tar.gz}" && patch -p1 --dry-run < "../$_pname" ); then
+        log "$_pname APPLIES CLEANLY to ${srcball%.tar.gz} ✓"
+      else
+        die "$_pname does NOT apply cleanly — rework needed."
+      fi
+    done
   else
     log "(could not resolve source tarball via makepkg; skipping apply check)"
   fi
@@ -159,7 +173,7 @@ log "Authenticating (sudo needed for build dependencies)"
 sudo -v || die "This script needs sudo to install build dependencies."
 
 log "Building $CUSTOM_PKGBASE (this takes ~30-50 min)"
-makepkg --syncdeps --cleanbuild
+PKGDEST="$BUILD_ROOT" makepkg --syncdeps --cleanbuild
 
 # ---- install ----------------------------------------------------------------
 # Install explicitly so the password prompt appears HERE, after the build —
