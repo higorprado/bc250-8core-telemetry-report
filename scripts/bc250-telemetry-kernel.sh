@@ -124,7 +124,7 @@ log "Guarding against interactive kconfig prompts"
 sed -i '/### Rewrite configuration/a\    yes "" | make "${BUILD_FLAGS[@]}" olddefconfig >/dev/null 2>&1 || true' PKGBUILD
 
 log "Resulting package configuration"
-grep -E '^(_pkgsuffix=|pkgbase=|_major=|_minor=|_rcver=|_srctag=|pkgver=|pkgrel=)' PKGBUILD | tail -n 10
+makepkg --printsrcinfo 2>/dev/null | grep -E '^\s*(pkgbase|pkgver|pkgrel) = '
 
 # ---- import the kernel's PGP signing key (makepkg verifies source .asc) --------
 # CachyOS signs the kernel tarball; without the key makepkg aborts at verify().
