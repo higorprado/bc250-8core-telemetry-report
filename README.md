@@ -9,8 +9,17 @@ the raw buffer). Raw data is included inline.
 ## Driver patch (experimental)
 
 A driver patch that turns the layout below into working per-core telemetry is in
-[`patches/0001-bc250-8core-telemetry.patch`](patches/0001-bc250-8core-telemetry.patch),
-with build/install instructions in [`APPLY-PATCH.md`](APPLY-PATCH.md).
+[`patches/0001-bc250-8core-telemetry.patch`](patches/0001-bc250-8core-telemetry.patch).
+
+**Easiest install:** run the one-command build script, which packages it as a
+separate kernel (`linux-cachyos-bc250`) and configures everything:
+
+```bash
+./scripts/bc250-telemetry-kernel.sh          # stable; add --rc for the RC kernel
+```
+
+Full manual/advanced steps are in [`APPLY-PATCH.md`](APPLY-PATCH.md). The patch
+applies unchanged to CachyOS 7.1.x and the 7.2 RC.
 
 > **EXPERIMENTAL — USE AT YOUR OWN RISK.** The mapping is empirical and specific
 to one PMFW revision; it has no runtime sanity check and is not endorsed by AMD.

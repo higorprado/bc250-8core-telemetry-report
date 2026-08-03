@@ -9,6 +9,26 @@
 > the worst realistic outcome is wrong telemetry numbers — but you apply it on
 > your own responsibility. Keep the stock rollback handy (see below).
 
+## Quick way (recommended)
+
+Run the build script. It downloads the official CachyOS PKGBUILD, injects the
+patch, builds and installs a **separate** kernel package (`linux-cachyos-bc250`)
+that coexists with the stock kernel, and configures the `cs_eight_core_map`
+parameter. Roll back any time by booting the stock kernel.
+
+```bash
+git clone https://github.com/higorprado/bc250-8core-telemetry-report
+cd bc250-8core-telemetry-report
+./scripts/bc250-telemetry-kernel.sh          # stable linux-cachyos
+# ./scripts/bc250-telemetry-kernel.sh --rc   # or the linux-cachyos-rc kernel
+```
+
+Then reboot and select `linux-cachyos-bc250`. The build takes ~20-30 min.
+The patch applies unchanged to CachyOS 7.1.x and the 7.2 RC.
+
+The rest of this document is the **manual / advanced** procedure (module-only
+replacement) for those who want the faster path or need to understand each step.
+
 ## What it does
 
 On a BC-250 with 8 cores unlocked, the PMFW writes a **hybrid** Current metrics
