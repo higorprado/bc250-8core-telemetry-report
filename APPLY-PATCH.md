@@ -19,12 +19,16 @@ boot. Roll back any time by booting the stock kernel.
 ```bash
 git clone https://github.com/higorprado/bc250-8core-telemetry-report
 cd bc250-8core-telemetry-report
-./scripts/bc250-telemetry-kernel.sh          # stable linux-cachyos
-# ./scripts/bc250-telemetry-kernel.sh --rc   # or the linux-cachyos-rc kernel
+./scripts/bc250-telemetry-kernel.sh --dry-run   # verify the patches apply first
+./scripts/bc250-telemetry-kernel.sh             # stable linux-cachyos, telemetry only
+# ./scripts/bc250-telemetry-kernel.sh --rc      # or the linux-cachyos-rc kernel
+# ./scripts/bc250-telemetry-kernel.sh --audio   # also apply the DP audio fix (7.2 only)
 ```
 
 Then reboot and select `linux-cachyos-bc250`. The build takes ~20-30 min.
-The patch applies unchanged to CachyOS 7.1.x and the 7.2 RC.
+Patch 0001 (telemetry + GPU activity) applies to CachyOS 7.1.x and the 7.2 RC.
+Patch 0002 (DP spread-spectrum audio fix) is **opt-in** (`--audio`) and **7.2
+only**; it is off by default.
 
 The rest of this document is the **manual / advanced** procedure (module-only
 replacement) for those who want the faster path or need to understand each step.
@@ -42,6 +46,9 @@ per-core region and the Gfxclk field. This patch:
 - Auto-detects the physical core count and populates the per-core `gpu_metrics`
   arrays from the hybrid layout when 8 cores are present. Cores with no firmware
   slot stay at `0xFFFF` sentinel.
+- Reports **GPU activity** (`average_gfx_activity` / `AMDGPU_PP_SENSOR_GPU_LOAD`)
+  by sampling the `GRBM` `GUI_ACTIVE` bit, since cyan skillfish firmware publishes
+  no GFX-activity field.
 - Leaves all aggregate telemetry (GPU/SOC temperature, rail power, clocks) intact.
 
 ## Prerequisites
@@ -121,6 +128,7 @@ amdgpu.cs_eight_core_map=1
   power is in the aggregate CPU rail, `average_soc_power`).
 - `temperature_core`: cores 4 and 5 only; the rest = `0xFFFF` (no individual sensor).
 - `current_gfxclk`: via `GetGfxclkFrequency`.
+- `average_gfx_activity` / GPU load: GFX busy % from `GRBM` `GUI_ACTIVE`.
 - Aggregates (Gfx/SOC temperature, CPU/GPU rail power, clocks): reliable.
 
 > `average_socket_power` (CurrentSocketPower @0x68) is an unreliable PMFW field on
@@ -144,3 +152,10 @@ sudo depmod 7.1.3-2-cachyos && sudo limine-mkinitcpio && sudo rebuild-pstate.py
 - Read-path only: no power/clock/voltage control is altered; only the
   `GetGfxclkFrequency` query is added.
 - See `README.md` for the full layout mapping and differential-proof data.
+
+## Credits
+
+GPU activity reporting, the hybrid-aware GFX-clock read fix, and the
+DisplayPort spread-spectrum audio fix are contributed by **MastaG**. The physical
+core-count auto-detection is contributed by **FilippoR**
+([github.com/filippor](https://github.com/filippor)).

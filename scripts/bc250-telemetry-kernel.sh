@@ -2,16 +2,21 @@
 #
 # bc250-telemetry-kernel.sh
 #
-# Build a CachyOS kernel with the BC-250 8-core telemetry patch, packaged as a
+# Build a CachyOS kernel with the BC-250 telemetry patches, packaged as a
 # SEPARATE kernel (linux-cachyos-bc250) that coexists with the stock kernel.
-# One command: downloads the official CachyOS PKGBUILD, injects the patch,
+# One command: downloads the official CachyOS PKGBUILD, injects the patches,
 # builds and installs. Roll back any time by booting the stock kernel.
 #
+# Patches applied by default:
+#   0001  per-core telemetry + GPU activity (8-core hybrid SMU layout, gfxclk)
+#   0002  DisplayPort spread-spectrum audio fix        (opt-in: --audio; 7.2 only)
+#
 # Usage:
-#   ./bc250-telemetry-kernel.sh             # stable linux-cachyos, telemetry patch
+#   ./bc250-telemetry-kernel.sh             # stable linux-cachyos, telemetry only
 #   ./bc250-telemetry-kernel.sh --rc        # linux-cachyos-rc instead
-#   ./bc250-telemetry-kernel.sh extra.patch # also apply an extra patch (e.g. audio)
-#   ./bc250-telemetry-kernel.sh --dry-run   # inject patch, verify it applies, skip the build
+#   ./bc250-telemetry-kernel.sh --audio     # also apply the DP audio fix (7.2 only)
+#   ./bc250-telemetry-kernel.sh extra.patch # also apply an extra (3rd) patch
+#   ./bc250-telemetry-kernel.sh --dry-run   # inject patches, verify they apply, skip the build
 #   ./bc250-telemetry-kernel.sh --help
 #
 # Run as a NORMAL user (not root — makepkg refuses root).
@@ -20,11 +25,12 @@
 set -Eeuo pipefail
 
 VARIANT="${BC250_VARIANT:-linux-cachyos}"   # linux-cachyos (stable) | linux-cachyos-rc
+APPLY_AUDIO="${BC250_AUDIO:-0}"             # 0 = skip audio (default); 1 = apply DP audio fix (0002, 7.2 only)
 EXTRA_PATCH=""
 DRY_RUN=0
 
 usage() {
-  sed -n '3,16p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -36,6 +42,8 @@ while [ $# -gt 0 ]; do
     --rc)      VARIANT="linux-cachyos-rc"; shift;;
     --stable)  VARIANT="linux-cachyos"; shift;;
     --dry-run) DRY_RUN=1; shift;;
+    --audio)    APPLY_AUDIO=1; shift;;
+    --no-audio) APPLY_AUDIO=0; shift;;
     -h|--help) usage;;
     --*) echo "Unknown option: $1" >&2; exit 2;;
     *)  if [[ -n "$EXTRA_PATCH" ]]; then
@@ -77,6 +85,15 @@ fi
 [[ -f "$TELEMETRY_PATCH" ]] || die "Telemetry patch missing: $TELEMETRY_PATCH"
 
 PATCHES=("$TELEMETRY_PATCH")
+
+# Optional: apply the DP spread-spectrum audio fix (patch 0002), bundled in
+# the repo. Opt in with --audio (or BC250_AUDIO=1). 7.2 only.
+AUDIO_PATCH="${SCRIPT_DIR}/../patches/0002-bc250-audio-dp-ss.patch"
+if [[ "$APPLY_AUDIO" == "1" ]]; then
+  [[ -f "$AUDIO_PATCH" ]] || die "Audio patch not found: $AUDIO_PATCH (use --no-audio to skip)"
+  PATCHES+=("$(realpath "$AUDIO_PATCH")")
+fi
+
 if [[ -n "$EXTRA_PATCH" ]]; then
   [[ -f "$EXTRA_PATCH" ]] || die "Extra patch not found: $EXTRA_PATCH"
   PATCHES+=("$(realpath "$EXTRA_PATCH")")
@@ -192,5 +209,5 @@ fi
 # remains available to force the 8-core layout for debugging.
 log "Done. Installed $CUSTOM_PKGBASE."
 log "Reboot and select 'linux-cachyos-bc250' in your bootloader."
-log "Per-core telemetry is auto-detected at boot; verify with:"
-log "  amdgpu_top   (look for current_coreclk across 8 cores)"
+log "Per-core telemetry and GPU activity are auto-detected at boot; verify with:"
+log "  amdgpu_top   (current_coreclk across 8 cores; GPU usage)"
