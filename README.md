@@ -204,6 +204,24 @@ For cores without data, the correct marker is the `0xFFFF` sentinel (the kernel'
 Using 0 is wrong — it would be read as a real 0 MHz / 0 °C / 0 mW and confuse fan/undervolt
 tooling.
 
+### Reading the telemetry at runtime
+
+With the 8-core hybrid layout active (the CachyOS kernel auto-detects the physical core
+count), per-field behaviour in `amdgpu_top` / `gpu_metrics` is:
+
+- `current_coreclk`: all 8 cores (~4050 MHz under load).
+- `average_core_power`: cores 1–7 (~7 W/core under load); core 0 = `0xFFFF` sentinel (its
+  draw is folded into the CPU-rail aggregate, `Power[0]` @0x60).
+- `temperature_core`: cores 4 and 5 only; the rest = `0xFFFF`.
+- `current_gfxclk`: served by the `GetGfxclkFrequency` SMU message (there is no table slot).
+- `average_gfx_activity` / GPU load: GFX busy % sampled from the `GRBM` `GUI_ACTIVE` bit,
+  since this firmware publishes no GFX-activity field.
+- Aggregates (Gfx/SOC temperature, CPU/GPU rail power, clocks): reliable.
+
+> `average_socket_power` (CurrentSocketPower @0x68) is an unreliable PMFW field on this
+> firmware — it drops under load. Use the CPU-rail aggregate (`Power[0]` @0x60, what
+> `amdgpu_top` reports as package power) or `hwmon` for package power.
+
 ## Caveats
 
 - The layout was mapped empirically on one machine/firmware revision. Other BC-250 firmware
