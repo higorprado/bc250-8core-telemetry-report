@@ -9,29 +9,33 @@
 > the worst realistic outcome is wrong telemetry numbers — but you apply it on
 > your own responsibility. Keep the stock rollback handy (see below).
 
-## Quick way (recommended)
+## Recommended: use the BC-250 CachyOS kernel (MastaG)
 
-Run the build script. It downloads the official CachyOS PKGBUILD, injects the
-patch, builds and installs a **separate** kernel package (`linux-cachyos-bc250`)
-that coexists with the stock kernel. Per-core telemetry is auto-detected at
-boot. Roll back any time by booting the stock kernel.
+The telemetry and audio fixes are now packaged and maintained as a CachyOS
+kernel by **MastaG** — [`MastaG/linux-cachyos-bc250`](https://github.com/MastaG/linux-cachyos-bc250).
+It publishes `linux-cachyos-bc250` (+ headers) as a pacman repository with
+automatic rebuilds on upstream updates and a stable package name across RC and
+stable kernels. **Prefer it over a manual build.**
 
-```bash
-git clone https://github.com/higorprado/bc250-8core-telemetry-report
-cd bc250-8core-telemetry-report
-./scripts/bc250-telemetry-kernel.sh --dry-run   # verify the patches apply first
-./scripts/bc250-telemetry-kernel.sh             # stable linux-cachyos, telemetry only
-# ./scripts/bc250-telemetry-kernel.sh --rc      # or the linux-cachyos-rc kernel
-# ./scripts/bc250-telemetry-kernel.sh --audio   # also apply the DP audio fix (7.2 only)
+```ini
+# /etc/pacman.conf
+[bc250-cachyos]
+SigLevel = Optional TrustAll
+Server = https://github.com/MastaG/linux-cachyos-bc250/releases/download/repo
 ```
 
-Then reboot and select `linux-cachyos-bc250`. The build takes ~20-30 min.
-Patch 0001 (telemetry + GPU activity) applies to CachyOS 7.1.x and the 7.2 RC.
-Patch 0002 (DP spread-spectrum audio fix) is **opt-in** (`--audio`) and **7.2
-only**; it is off by default.
+```bash
+sudo pacman -Syy
+sudo pacman -Syu linux-cachyos-bc250 linux-cachyos-bc250-headers
+```
 
-The rest of this document is the **manual / advanced** procedure (module-only
-replacement) for those who want the faster path or need to understand each step.
+The build script and the standalone patch files that used to live in this repo
+have been removed in favour of that maintained package.
+
+The rest of this document is the **manual / advanced** module-replacement
+procedure, kept as historical reference. The patches now live in MastaG's repo
+(`patches/0001-bc250-8core-telemetry-gpu-activity.patch` and
+`patches/0002-bc250-audio.patch`).
 
 ## What it does
 
@@ -66,7 +70,7 @@ deployed source byte-for-byte).
 ```bash
 cd /path/to/cachyos-7.1.3-1
 grep -c SmuMetrics_t drivers/gpu/drm/amd/pm/swsmu/smu11/cyan_skillfish_ppt.c   # stock, six-wide
-patch -p1 < 0001-bc250-8core-telemetry.patch
+patch -p1 < 0001-bc250-8core-telemetry-gpu-activity.patch   # from MastaG/linux-cachyos-bc250
 ```
 
 Files touched (2):

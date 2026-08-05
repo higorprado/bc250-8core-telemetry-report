@@ -6,37 +6,46 @@ how it differs from both the stock six-core struct and the community "eight-core
 It is the result of a differential probe (offlining cores one group at a time and reading 
 the raw buffer). Raw data is included inline.
 
-## Driver patch (experimental)
+## Ready-to-use kernel (recommended)
 
-Two patches turn the layout below into working telemetry:
+The telemetry and audio fixes implied by this layout are now packaged and
+maintained as a CachyOS kernel by **MastaG** —
+[`MastaG/linux-cachyos-bc250`](https://github.com/MastaG/linux-cachyos-bc250).
+It publishes `linux-cachyos-bc250` (+ headers) as a pacman repository with
+automatic rebuilds on upstream updates and a stable package name across the RC
+and stable kernels. **Prefer it over a self-build.**
 
-- **`patches/0001-bc250-8core-telemetry.patch`** — per-core telemetry for the
-  8-core hybrid SMU layout (frequency/power/temperature where the firmware
-  provides them) **plus GPU activity** (GFX busy %, sampled from the `GRBM`
-  `GUI_ACTIVE` bit since the firmware publishes no activity field). Applies to
-  CachyOS 7.1.x and the 7.2 RC.
-- **`patches/0002-bc250-audio-dp-ss.patch`** — disables DisplayPort reference
-  spread spectrum for cyan skillfish (fixes DP audio clicks/pops). **Opt-in**
-  (`--audio`) and **7.2 only**: it sets `init_data.flags.ignore_dpref_ss`, a flag
-  absent in 7.1.x. Off by default.
+Add the repository to `/etc/pacman.conf`:
 
-**Easiest install:** run the one-command build script, which packages them as a
-separate kernel (`linux-cachyos-bc250`) and configures everything:
-
-```bash
-./scripts/bc250-telemetry-kernel.sh --dry-run   # verify the patches apply, then:
-./scripts/bc250-telemetry-kernel.sh             # stable, telemetry only (add --rc for RC)
-./scripts/bc250-telemetry-kernel.sh --audio     # also apply the DP audio fix (7.2 only)
+```ini
+[bc250-cachyos]
+SigLevel = Optional TrustAll
+Server = https://github.com/MastaG/linux-cachyos-bc250/releases/download/repo
 ```
 
-Full manual/advanced steps are in [`APPLY-PATCH.md`](APPLY-PATCH.md).
+Refresh and install during a normal upgrade:
 
-> **EXPERIMENTAL — USE AT YOUR OWN RISK.** The mapping is empirical and specific
-to one PMFW revision; it has no runtime sanity check and is not endorsed by AMD.
-It only modifies the telemetry **read-out** path (no power/clock/voltage control is
-changed), so the worst realistic outcome is wrong telemetry numbers — but you apply
-it at your own responsibility. Read `APPLY-PATCH.md` fully and keep the stock
-rollback handy.
+```bash
+sudo pacman -Syy
+pacman -Sl bc250-cachyos
+sudo pacman -Syu linux-cachyos-bc250 linux-cachyos-bc250-headers
+```
+
+Keep a known-working kernel installed as a fallback, then reboot and verify:
+
+```bash
+pacman -Qi linux-cachyos-bc250
+uname -r
+```
+
+The build script and the standalone patch files that used to live in this repo
+have been removed in favour of that maintained package. For a local build, use
+`./scripts/build-package.sh` in MastaG's repo.
+
+> The mapping documented below is empirical and specific to one PMFW revision; it
+> has no runtime sanity check and is not endorsed by AMD. It only concerns the
+> telemetry **read-out** path (no power/clock/voltage control is changed), so the
+> worst realistic outcome is wrong telemetry numbers.
 
 ## Credits
 
